@@ -1,0 +1,17 @@
+.data
+    misc-data = "This should not be printed"
+    lobsterlove = "I love lobsters"
+    other-data = [1 2 3 4]
+
+.code
+    load r0, lobsterlove    ; Load the pointer into the string into the r0 register
+
+    @putchar
+        cmp r1, *r0         ; Compare the data at the current string pointer with 0
+        triteq fl, 0        ; Tritwise equality with zero - (0->1, 1->0, -1->0)
+        tritmul fl, 0t1     ; Zero all trits except the last one
+        loadnz pc, @end     ; Exit on encountering a null trite
+        output *r0++        ; Write the result and increment the pointer register
+        load pc, @putchar   ; Keep looping
+
+    @end
