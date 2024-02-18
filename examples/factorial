@@ -1,0 +1,37 @@
+.data
+    foo = ""
+
+.code
+    load r0, 5
+    load r1, 1234 ; Arbitrary value to show that r1 is not affected
+
+@factorial
+    ; [r0: i9 -> r0: i9]
+    ; Returns the factorial of r0 (in r0).
+
+    ; Push r1
+    store sp, r1
+    add sp, 1
+
+    ; Start the accumulator at r1 = 1
+    load r1, 1
+
+    @factorial-loop
+        ; while x != 0
+        cmp r0, 0
+        triteq fl, 0
+        tritmul fl, 1
+
+        loadnz r0, 0
+        loadnz pc, @factorial-exit
+
+        ; r1 *= r0, r0 -= 1
+        mul r1, r0
+        add r0, -1
+        load pc, @factorial-loop
+
+    @factorial-exit
+    load r0, r1 ; Set r0 from r1 (accumulator)
+
+    ; Pop r1
+    load r1, *--sp
