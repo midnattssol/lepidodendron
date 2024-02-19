@@ -183,7 +183,7 @@ class MetadataString:
             patterns = patterns.items()
 
         for tag, pattern in patterns:
-            if match := self.match(pattern):
+            if match := self.search_first(pattern):
                 return Just((tag, match.unwrap()))
 
         return Nil

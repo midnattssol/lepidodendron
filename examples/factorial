@@ -1,23 +1,26 @@
-.data
-    foo = ""
-
 .code
     load r0, 5
-    load r1, 1234 ; Arbitrary value to show that r1 is not affected
+    load r1, 1234 ; Arbitrary value just to check that r1 is not affected
 
-@factorial
-    ; [r0: i9 -> r0: i9]
-    ; Returns the factorial of r0 (in r0).
-
-    ; Push r1
-    store sp, r1
+    store sp, @post-call
     add sp, 1
 
-    ; Start the accumulator at r1 = 1
+    load pc, @factorial
+
+    @post-call
+
+    load pc, -1 ; Exit
+
+    ; Functions assume that the last item pushed onto the stack is the return address.
+
+    @factorial ; [r0 -- r0]
+    ; Push r1 and start the accumulator at 1
+    store sp, r1
+    add sp, 1
     load r1, 1
 
     @factorial-loop
-        ; while x != 0
+        ; while x != 0:
         cmp r0, 0
         triteq fl, 0
         tritmul fl, 1
@@ -31,7 +34,9 @@
         load pc, @factorial-loop
 
     @factorial-exit
-    load r0, r1 ; Set r0 from r1 (accumulator)
 
-    ; Pop r1
-    load r1, *--sp
+    ; Set r0 from the accumulator and pop the previous accumulator value
+    load r0, r1
+
+    load r1, *--sp ; pop r1
+    load pc, *--sp ; return

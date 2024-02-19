@@ -1,0 +1,8 @@
+- Add pretty bugs
+- Warn on unused labels
+- Warn on unused memory
+- "Did you mean xyz?"
+- Fix the hack with passing the string last if there is one and don't concat it
+- Tests
+- Macro support?
+- Context object allowing "streaming out" errs or similar

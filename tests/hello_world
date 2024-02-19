@@ -1,0 +1,13 @@
+.data
+    hello_world = "Hello, world!\0"
+
+.code
+    load r0, hello_world
+
+    @putch
+        cmp r1, *r0
+        triteq fl, 0
+        tritmul fl, 1
+        loadnz pc, -1
+        output *r0++
+        load pc, @putch

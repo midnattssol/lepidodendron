@@ -98,6 +98,8 @@ class VirtualMachine:
 
     buffer: str = ""
 
+    timeout: int = 500
+
     def log_execution(self, string):
         print(string, end="")
 
@@ -108,6 +110,9 @@ class VirtualMachine:
 
         while 0 <= (current_instr_index := self.get_register(Register.PC).as_int()) < len(self.program):
             n_instrs += 1
+            if n_instrs > self.timeout:
+                exit(1)
+
             current_instr = self.program[current_instr_index]
             self.execute_instruction(current_instr)
 

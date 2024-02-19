@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eux pipefail
 
-python ./assembler.py factorial
+python ./parsing.py examples/factorial

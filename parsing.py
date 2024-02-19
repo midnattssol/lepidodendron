@@ -14,6 +14,8 @@ import collections as col
 from ternary import *
 from vm import *
 import functools as ft
+import argparse
+import pathlib as p
 
 
 class TokenType(enum.Enum):
@@ -21,8 +23,6 @@ class TokenType(enum.Enum):
     ASSIGN = enum.auto()
     INSTRUCTION = enum.auto()
     LABEL = enum.auto()
-
-    # DEF_MACRO = enum.auto()
 
 
 @dc.dataclass
@@ -43,9 +43,6 @@ class ParsingErrData:
 
     def __repr__(self):
         return f"<{type(self).__qualname__} {self.sources!r} {self.message!r}>"
-
-
-# ParsingErrData = col.namedtuple("ParsingErrData", ["source_file", "sources", "message"])
 
 
 # ===| Parsing |===
@@ -73,8 +70,11 @@ def parse_line(string):
         }
     )
 
-    out = out.map(star(lambda tag, match: tag))
-    return out.map(lambda tag: Ok(Token(tag, string))).unwrap_or(Err(f"Unparseable line {string}"))
+    if out.is_nil:
+        return Err(f"Unparseable line {string}")
+
+    tag, _ = out.unwrap()
+    return Ok(Token(tag, string))
 
 
 # ===| Error handling |===
@@ -83,20 +83,29 @@ def parse_line(string):
 def compile_tokens(source_file, tokens) -> [Err]:
     """Find possible errors in the tokens."""
     result = compute_sections(source_file, tokens)
-    memory_variables_and_size = result.bind(lambda sections: allocate_memory(source_file, sections[".data"]))
+    memory_variables_and_size = result.bind(
+        lambda sections: allocate_memory(source_file, sections[".data"]) if ".data" in sections else Ok({})
+    )
 
     if memory_variables_and_size.is_err:
         return memory_variables_and_size
 
     sections = result.unwrap()
-    memory_identifiers, occupied_memory = memory_variables_and_size.unwrap()
+    memory_identifiers = memory_variables_and_size.unwrap()
+
+    ram_state = list(mit.flatten(i[2] for i in memory_identifiers.values()))
 
     label_names = list(filter(lambda token: token.token_type == TokenType.LABEL, tokens))
     label_names = [i.data.string for i in label_names]
 
-    widths = make_stream(source_file, sections[".code"], set(memory_identifiers) | set(label_names))
+    executable_stream = make_stream(
+        source_file,
+        sections[".code"],
+        set(memory_identifiers) | set(label_names),
+        {k: Tryte.from_int(v[1]) for k, v in memory_identifiers.items()},
+    )
 
-    return widths
+    return executable_stream.map(lambda x: (x, ram_state))
 
 
 def is_section(token):
@@ -200,7 +209,7 @@ def parse_assignment_right_hand_side(rhs: str) -> Result[List[Tryte], str]:
     return Err(f"Unparsable right-hand side of assignment ({rhs}) in source file.")
 
 
-def allocate_memory(source_file, tokens):
+def allocate_memory(source_file, data_section):
     """Allocate the initial memory."""
 
     def parse_assignment(token):
@@ -209,9 +218,8 @@ def allocate_memory(source_file, tokens):
         value = rhs.strip()
         return parse_assignment_right_hand_side(value).map(lambda x: (token, name, x))
 
-    data = []
     pointers = {}
-    assignments = Result.lift_iter(map(parse_assignment, tokens))
+    assignments = Result.lift_iter(map(parse_assignment, data_section))
 
     if assignments.is_err:
         return assignments
@@ -232,25 +240,24 @@ def allocate_memory(source_file, tokens):
         return maybe_errs
 
     sources, variable_names, trytes = zip(*memory)
+    trytes_bkp = trytes
     variable_names = [i.string for i in variable_names]
     trytes = it.accumulate([0, *map(len, trytes)])
-    trytes = list(trytes)
+    trytes = list(trytes)[:-1]
 
-    amount_allocated_memory = trytes.pop()
-
-    variable_data = zip(variable_names, zip(sources, trytes))
+    variable_data = zip(variable_names, zip(sources, trytes, trytes_bkp))
     variable_data = dict(variable_data)
-    return Ok((variable_data, amount_allocated_memory))
+    return Ok(variable_data)
 
 
 # ===| Executable code section |===
 
 
-def calculate_one(source_file, token, identifiers):
+def parse_one_executable_line(source_file, token, identifiers):
     command, *args = token.data.split()
     args = [arg.removesuffix_re(r"\s*,$") for arg in args]
 
-    expected_arity = OPNAMES[command.string]
+    expected_arity = get_arity(getattr(Opcode, command.string.upper()))
     actual_arity = len(args)
 
     if actual_arity != expected_arity:
@@ -261,7 +268,7 @@ def calculate_one(source_file, token, identifiers):
         )
         raise NotImplementedError()
 
-    lhs, rhs = mit.padded(map(Just, args), Nil, 2)
+    lhs, rhs = padded_left(map(Just, args), Nil, 2)
 
     lhs = lhs.map(lambda lhs: parse_register(source_file, lhs)).unwrap_or(Ok([Trits.zero(2)]))
     rhs = rhs.map(lambda rhs: parse_rhs(source_file, rhs, identifiers)).unwrap_or(Ok([Trits.zero(4)]))
@@ -285,13 +292,13 @@ def calculate_one(source_file, token, identifiers):
     return Ok(list(args) + last)
 
 
-def make_stream(source_file, tokens, identifiers):
+def make_stream(source_file, tokens, identifiers, labels):
     trytecode: (str | Tryte) = []
-    labels = {}
+    labels = labels.copy()
 
     for token in tokens:
         if token.token_type == TokenType.INSTRUCTION:
-            out = calculate_one(source_file, token, identifiers)
+            out = parse_one_executable_line(source_file, token, identifiers)
 
             if out.is_err:
                 return out
@@ -327,7 +334,7 @@ def parse_rhs(source_file, rhs, identifiers) -> Result(Trits[4, 2] | Trits[4, 2,
 
     elif is_label(rhs):
         # TODO: "did you mean x"
-        return make_err_from(source_file, f"Label `{rhs}` is never defined.", [rhs])
+        return make_err_from(source_file, [rhs], f"Label `{rhs}` is never defined.")
 
     if (num_tryte := parse_one_tryte_integer(rhs)).is_some:
         num_tryte = num_tryte.unwrap()
@@ -378,10 +385,10 @@ def parse_rhs(source_file, rhs, identifiers) -> Result(Trits[4, 2] | Trits[4, 2,
 
     result = rhs.tagged_regex(
         [
-            (Mode.PTR_POSTDECREMENT, r"^(.*)--$"),
-            (Mode.PTR_POSTINCREMENT, r"^(.*)\+\+$"),
-            (Mode.PTR_PREINCREMENT, r"^\+\+(.*)$"),
-            (Mode.PTR_PREDECREMENT, r"^--(.*)$"),
+            (Mode.PTR_POSTDECREMENT, r"^(.*)(?=--$)"),
+            (Mode.PTR_POSTINCREMENT, r"^(.*)(?=\+\+$)"),
+            (Mode.PTR_PREINCREMENT, r"(?<=^\+\+)(.*)$"),
+            (Mode.PTR_PREDECREMENT, r"(?<=^--)(.*)$"),
             (Mode.PTR, r"^(.*)$"),
         ]
     )
@@ -439,7 +446,19 @@ def parse_one_tryte_integer(input_str: str) -> Maybe[Tryte]:
     return Nil
 
 
-OPNAMES = {"loadnz": 2, "noop": 0, "cmp": 2}
+def get_arity(opcode: Opcode) -> int:
+    """Get the arity of an operation."""
+
+    if opcode == Opcode.NOOP:
+        return 0
+    if opcode == Opcode.OUTPUT:
+        return 1
+    return 2
+
+
+OPNAMES = [i.lower() for i in dir(Opcode) if i.isupper()]
+# names = [x: getattr(Opcode, x) for x in names]
+
 OPNAMES_REGEX = "|".join(map(re.escape, OPNAMES))
 IDENTIFIER_REGEX = r"\w[\w\d_-]*"
 BEGIN_COMMENT = ";"
@@ -453,33 +472,68 @@ SECTION_LOCKED_TOKEN_TYPES = {
     ".code": [TokenType.LABEL, TokenType.INSTRUCTION],
 }
 
-# TODO: warn on unused labels
-# TODO: warn on unused memory items
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Assemble a TASM file.")
+    parser.add_argument("file", metavar="F", type=p.Path, help="the file to read data from")
+
+    args = parser.parse_args()
+
+    with args.file.open("r", encoding="utf-8") as file:
+        contents = file.read()
+
+    # data, program = assemble_program(contents)
+    result = parse_file(MetadataString.from_str(contents))
+
+    if result.is_err:
+        for item in result.unwrap_err():
+            print(item)
+        exit(1)
+
+    program, ram_state = result.unwrap()
+
+    vm = VirtualMachine(program)
+    vm.memory[: len(ram_state)] = ram_state
+    vm.set_register(Register.SP, Tryte.from_int(len(ram_state)))
+
+    # Set the stack pointer
+
+    max_memdump = 81
+    vm.run()
+
+    print()
+    print("===| Program |===\n")
+    print(hept_dump(vm.program))
+    print("===| Registers |===\n")
+    print(hept_dump(vm.registers))
+    print("===| Memory |===\n")
+    print(hept_dump(vm.memory[:max_memdump]))
+    print("===| Output buffer |===\n")
+    print(vm.buffer)
 
 
-def main():
-    tokens = """
-    .data
-       a = 10    ; hello
-       foo = [1 2 3 4]
-       bar = "hello world!"
-       ; a = 999
-
-    .code
-       noop
-       loadnz r0, 999
-       loadnz pc, @hello
-       ; cmp r0, a
-       @hello
-       cmp r1, *r0
-       ; jnz 11
-    """
-
-    tokens = MetadataString.from_str(tokens)
-
-    result = parse_file(tokens)
-    print(result)
-
+# def main():
+#     tokens = """
+#     .data
+#        a = 10    ; hello
+#        foo = [1 2 3 4]
+#        bar = "hello world!"
+#        ; a = 999
+#
+#     .code
+#        noop
+#        loadnz r0, 999
+#        loadnz pc, @hello
+#        ; cmp r0, a
+#        @hello
+#        cmp r1, *r0
+#        ; jnz 11
+#     """
+#
+#     tokens = MetadataString.from_str(tokens)
+#
+#     result = parse_file(tokens)
+#     print(result)
 
 if __name__ == "__main__":
     main()
