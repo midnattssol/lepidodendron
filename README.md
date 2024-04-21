@@ -68,7 +68,7 @@ Note that the address data may not necessarily be a memory address, but might al
 `lepidodendron` parses instructions in the format `opcode rg, val`, where `rg` is the register and `val` the read data (as explained in Addressing modes). Instructions are binary, unary, or nullary.
 
 | Opcode   | Operation name | Description |
-|:------- :|:--------------------|:------------|
+|:-------:|:--------------------|:------------|
 | `store rg, val`    | Store               | Store the value `val` into memory at the location specified by `rg`. |
 | `load rg, val`     | Load                | Perform side effects of memory access and load the value from memory at the location specified by `val` into register `rg`. |
 | `loadnz rg, val`   | Load non-zero       | Perform side effects of memory access and, iff `fl` is zero, load the value from memory at the location specified by `val` into register `rg`. |
