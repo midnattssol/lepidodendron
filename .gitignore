@@ -1,3 +1,4 @@
 .ropeproject
 ignore
 __pycache__
+.project-metadata

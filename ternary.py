@@ -93,11 +93,11 @@ class Tryte(Trits):
         assert len(self.trits) == 9
 
     @classmethod
-    def from_int(cls, num: int) -> This:
+    def from_int(cls, num: int) -> Tryte:
         return cls.trits_from_int(num, 9)
 
     @classmethod
-    def zero(cls) -> This:
+    def zero(cls) -> Tryte:
         return cls(Trits.zero(9).trits)
 
     def incr(self, diff: int = 1) -> Self:
@@ -114,7 +114,7 @@ class Tryte(Trits):
         chunks = map(ternary_to_int, chunks)
         return "".join(BALANCED_HEPTAVINTIMAL_DIGITS[chunk] for chunk in chunks)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Tryte) -> bool:
         return super().__eq__(other)
 
     def __repr__(self):

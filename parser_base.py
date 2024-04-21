@@ -282,10 +282,6 @@ class MetadataString:
     def __contains__(self, val):
         return val in self.string
 
-    # # lstrip = and_lift("lstrip", direct=True)
-    # rstrip = and_lift("rstrip", direct=True)
-    # strip = and_lift("strip", direct=True)
-
 
 @dc.dataclass(slots=True)
 class Metadata:

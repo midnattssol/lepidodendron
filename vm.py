@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.11
 """"""
 from __future__ import annotations
+
 import array
 import copy as cp
 import dataclasses as dc
@@ -12,8 +13,8 @@ import typing as t
 
 import more_itertools as mit
 import terscii
-from ternary import *
 from agave import *
+from ternary import *
 
 NumLike = t.Union[int, str]
 T = t.TypeVar("T")
@@ -251,6 +252,9 @@ class VirtualMachine:
 
         elif opcode == Opcode.OUTPUT:
             self.buffer += terscii.from_terscii(self.get_ram(address).as_int())
+
+        elif opcode == Opcode.NOOP:
+            pass
 
         elif opcode == Opcode.LOAD or opcode == Opcode.LOADNZ:
             # This has to be out here since it has side effects, and these should execute

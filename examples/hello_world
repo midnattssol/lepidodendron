@@ -4,10 +4,10 @@
 .code
     load r0, hi             ; Load the pointer into the string into the r0 register
 
-    @putchar
+    @print
         cmp r1, *r0         ; Compare the data at the current string pointer with 0
         triteq fl, 0        ; Tritwise equality with zero - (0->1, 1->0, -1->0)
         tritmul fl, 1       ; Zero all trits except the last one by tritwise multiplication
         loadnz pc, -1       ; Jump to -1 (exit) on encountering a null trite
         output *r0++        ; Write the result and increment the pointer register
-        load pc, @putchar   ; Keep looping
+        load pc, @print     ; Keep looping
